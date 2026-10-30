@@ -28,7 +28,7 @@ import requests
 API = "https://www.myfxbook.com/api"
 FIELDS = [
     "timestamp_utc", "symbol", "short_pct", "long_pct", "short_vol", "long_vol",
-    "short_pos", "long_pos", "avg_short_price", "avg_long_price",
+    "short_pos", "long_pos", "avg_short_price", "avg_long_price", "price",
 ]
 
 
@@ -55,12 +55,32 @@ def fetch_outlook(session):
     return d["symbols"]
 
 
+def fetch_price(symbol):
+    """Best-effort market price from Yahoo Finance (e.g. EURUSD -> EURUSD=X). Returns None on failure."""
+    try:
+        r = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol.upper()}=X",
+            params={"interval": "1m", "range": "1d"},
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        return r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"]
+    except Exception:
+        return None
+
+
 def append_rows(path, rows):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+    exists = os.path.exists(path) and os.path.getsize(path) > 0
+    if exists:  # older logs have no "price" column: upgrade the file in place
+        with open(path, newline="") as f:
+            old = list(csv.DictReader(f))
+        if old and "price" not in old[0]:
+            with open(path, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+                w.writeheader()
+                w.writerows(old)
     with open(path, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
-        if new_file:
+        if not exists:
             w.writeheader()
         w.writerows(rows)
 
@@ -114,6 +134,7 @@ def main():
                     "short_vol": s["shortVolume"], "long_vol": s["longVolume"],
                     "short_pos": s["shortPositions"], "long_pos": s["longPositions"],
                     "avg_short_price": s.get("avgShortPrice"), "avg_long_price": s.get("avgLongPrice"),
+                    "price": fetch_price(s["name"]),
                 } for s in symbols if s["name"].upper() in wanted]
                 append_rows(args.out, rows)
                 for r in rows:
