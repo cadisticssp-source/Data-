@@ -56,6 +56,7 @@ def fetch_outlook(session):
 
 
 def append_rows(path, rows):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     new_file = not os.path.exists(path) or os.path.getsize(path) == 0
     with open(path, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
